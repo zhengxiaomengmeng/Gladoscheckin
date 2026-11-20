@@ -383,7 +383,7 @@ class CookieEntry:
         else:
             self.log(domain, LogEmoji.INFO, "签到未成功，跳过自动兑换")
 
-        notes = []
+        notes = [result.note] if result.note else []
         expiry_note = self._expiry_note(result.days)
         if expiry_note:
             notes.append(expiry_note)
@@ -714,6 +714,11 @@ def parse_checkin(raw: Optional[Dict], domain: str, log: Callable[..., None], ua
     # ① 设备不匹配
     if code == 4 and raw.get("reason") == "device-mismatch":
         log_reject(4, raw, message, domain, log, ua_hint)
+        return result
+
+    if code == 5 and ("cloudflare" in message.lower() or "turnstile" in message.lower()):
+        result.note = f"Cloudflare 验证失败，本次签到未记录。请在浏览器打开 https://{domain}/console/checkin 完成官网验证。"
+        log(LogEmoji.ERROR, result.note, True)
         return result
 
     # ②~④ ：repeated「已签到」，code==0 成功
@@ -1379,6 +1384,8 @@ def main() -> None:
         else:
             logger.info(f"{LogEmoji.START} 步骤 2: 执行签到")
             report = CheckinRunner(config).run()
+            if any(entry.result.code is CheckinStatus.FAILURE for entry in report.entries):
+                exit_code = 1
 
             logger.info(f"{LogEmoji.START} 步骤 3: 生成报告")
             logger.info(f"\n{LogEmoji.END} ========== 签到总结 ==========\n{report.title}\n{report.render()}")
